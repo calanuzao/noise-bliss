@@ -3,10 +3,21 @@ import librosa
 import librosa.display
 import matplotlib.pyplot as plt
 import numpy as np
+from pathlib import Path
 import pandas as pd
 import os
 import torch
 import torchaudio
+
+
+# ---------- BOROUGH CODE TO NAME MAPPING ----------
+borough_map = {
+    1: "Manhattan",
+    2: "Bronx",
+    3: "Brooklyn",
+    4: "Queens",
+    5: "Staten Island"
+}
 
 def load_metadata(csv_path):
     """Loads metadata from a CSV file.
@@ -21,38 +32,156 @@ def load_metadata(csv_path):
 
 def load_data(data_path):
     """
-    Load audio files and their corresponding characteristics.
+    Loads all .wav files and infers labels from parent folder names.
 
-    Parameters:
-    data_path: str
-            Path to the directory containing the SONYC-UST Data
+    Args:
+        data_path (str or Path): Root directory where audio files are stored.
 
     Returns:
-    Tuple[np.ndarray, np.ndarray]
-        A tuple of the two numpy arrays.
-        The first array contains the file paths of the audio files,
-        and the second array contains their corresponding lables.
+        audio_files (list of str): List of full audio file paths.
+        labels (list of str): Corresponding label for each audio file.
     """
+    data_path = Path(data_path)
+    audio_files = list(data_path.rglob("*.wav"))
+    labels = [f.parent.name for f in audio_files]
+    
+    # Convert Path objects to strings for compatibility
+    audio_files = [str(f) for f in audio_files]
 
-    if isinstance(data_path, bytes):
-        data_path = data_path.decode("utf-8")
+    return audio_files, labels
 
-    audio_files = []
-    labels = []
 
-    for root, dirs, files in os.walk(data_path):
-        for file in files:
 
-            if file.endswith(('.wav', '.mp3', '.ogg')):
-                file_path = os.path.join(root, file)
-                audio_files.append(file_path)
+# ---------- Construct datetime ----------
+def construct_datetime(df):
+    """
+    Constructs a 'datetime' column from 'year', 'week', 'day', 'hour'.
 
-                label = os.path.basename(root)
-                if isinstance(label, bytes):
-                    label = label.decode('utf8')  # Fixed this line to decode label
-                labels.append(label)
+    Returns the modified DataFrame.
+    """
+    # applly the datetime computation to each row using the "apply" method
+    dt_series = df.apply(lambda row: datetime.datetime.strptime(
+        # format the year, week, and day values; week and day incremented by 1
+        f"{int(row['year'])} {int(row['week']) + 1} {int(row['day']) + 1}",
+        "%G %V %u"                                      # G: century; V: Week; U: Weekday
+    ) + pd.Timedelta(hours=int(row['hour'])), axis=1)   # add the hour information using pd.Timedelta
+    
+    df['datetime'] = pd.to_datetime(dt_series)          # convert the series to datetime
+    return df                                           # return the dataframe
 
-    return np.array(audio_files), np.array(labels)
+# ---------- Construct location_id ----------
+def construct_location_id(df):
+    """
+    Constructs a unique 'location_id' column from 'sensor_id', 'borough', and 'block'.
+    
+    Returns the modified DataFrame.
+    """
+    df['location_id'] = (          
+        df['borough'].astype(str) + "-" +   
+        df['block'].astype(str) + "-" +
+        df['sensor_id'].astype(str)
+    )
+    return df
+
+# ---------- Compute and plot location-based distributions ----------
+def compute_and_plot_location_distributions(df):
+    """
+    Plots sensor-based and borough-based distributions.
+    Assumes 'location_id' and 'borough' columns exist.
+    """
+    # Count by sensor
+    sensor_counts = df['sensor_id'].value_counts().sort_index()
+
+    # Count by borough
+    borough_counts = df['borough'].value_counts().sort_index()
+
+    # Count by full location_id
+    location_counts = df['location_id'].value_counts().sort_index()
+
+    plot_distribution(sensor_counts, "Sensor ID", "Recordings", "Recordings per Sensor")
+    plot_distribution(borough_counts, "Borough Code", "Recordings", "Recordings per Borough")
+    plot_distribution(location_counts, "Location ID", "Recordings", "Recordings per Unique Location", kind='bar')
+
+# ---------- Compute and plot all distributions ----------
+def compute_and_plot_distributions(df):
+    """
+    Plots hourly, daily, weekly, monthly, yearly distributions.
+    """
+    hourly = df['datetime'].dt.hour.value_counts().reindex(range(24), fill_value=0).sort_index()
+    daily = df['datetime'].dt.date.value_counts().sort_index()
+    weekly = df['datetime'].dt.isocalendar().week.value_counts().sort_index()
+    monthly = df['datetime'].dt.month.value_counts().reindex(range(1, 13), fill_value=0).sort_index()
+    yearly = df['datetime'].dt.year.value_counts().sort_index()
+
+    plot_distribution(hourly, "Hour of Day", "Recordings", "Hourly Distribution", xticks=range(24))
+    plot_distribution(daily, "Date", "Recordings", "Daily Distribution", kind='line')
+    plot_distribution(weekly, "ISO Week", "Recordings", "Weekly Distribution")
+    plot_distribution(monthly, "Month", "Recordings", "Monthly Distribution", xticks=range(1, 13))
+    plot_distribution(yearly, "Year", "Recordings", "Yearly Distribution")
+
+
+def plot_distribution(data, xlabel, ylabel, title, kind='bar', xticks=None):
+    plt.figure(figsize=(10, 4))
+    if kind == 'bar':
+        plt.bar(data.index, data.values, color='steelblue')
+    elif kind == 'line':
+        plt.plot(data.index, data.values, marker='o')
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.title(title)
+    if xticks is not None:
+        plt.xticks(xticks)
+    plt.grid(True, axis='y')
+    plt.tight_layout()
+    plt.show()
+
+
+# ---------- PLOT BY SPLITS ----------
+import matplotlib.pyplot as plt
+
+def plot_distributions_by_split(df):
+    """
+    Plots hourly, daily, weekly, monthly, and yearly distributions by split
+    using colorblind-safe colors and enhanced visibility.
+    """
+    # Define high-contrast, colorblind-safe colors
+    split_colors = {
+        'train': '#E69F00',     # orange
+        'validate': '#56B4E9',  # sky blue
+        'test': '#009E73'       # green
+    }
+
+    time_granularities = {
+        'Hourly': df['datetime'].dt.hour,
+        'Daily': df['datetime'].dt.date,
+        'Weekly': df['datetime'].dt.isocalendar().week,
+        'Monthly': df['datetime'].dt.month,
+        'Yearly': df['datetime'].dt.year
+    }
+
+    for name, series in time_granularities.items():
+        plt.figure(figsize=(12, 4))
+
+        for split in df['split'].unique():
+            subset = df[df['split'] == split]
+            counts = series[subset.index].value_counts().sort_index()
+
+            plt.plot(
+                counts.index,
+                counts.values,
+                label=split.capitalize(),
+                color=split_colors.get(split, 'black'),
+                linewidth=1
+            )
+
+        plt.title(f"{name} Distribution by Split")
+        plt.xlabel(name)
+        plt.ylabel("Number of Recordings")
+        plt.legend(title="Split")
+        plt.grid(True, axis='y', linestyle='--', alpha=0.6)
+        plt.tight_layout()
+        plt.show()
+  
 
 def plot_waveform(waveform, sample_rate):
     """Plots the waveform of an audio signal.
@@ -111,82 +240,6 @@ def compute_mel_spectrogram(audio, sample_rate=22050, n_mels=128, hop_length=512
     plt.tight_layout()
     plt.show()
 
-# ---------- Construct datetime ----------
-def construct_datetime(df):
-    """
-    Constructs a 'datetime' column from 'year', 'week', 'day', 'hour'.
-
-    Returns the modified DataFrame.
-    """
-    dt_series = df.apply(lambda row: datetime.datetime.strptime(
-        f"{int(row['year'])} {int(row['week']) + 1} {int(row['day']) + 1}",
-        "%G %V %u"
-    ) + pd.Timedelta(hours=int(row['hour'])), axis=1)
-
-    df['datetime'] = pd.to_datetime(dt_series)
-    return df
-
-# ---------- Single distribution plot ----------
-def plot_distribution(data, xlabel, ylabel, title, kind='bar', xticks=None):
-    plt.figure(figsize=(10, 4))
-    if kind == 'bar':
-        plt.bar(data.index, data.values, color='steelblue')
-    elif kind == 'line':
-        plt.plot(data.index, data.values, marker='o')
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
-    plt.title(title)
-    if xticks is not None:
-        plt.xticks(xticks)
-    plt.grid(True, axis='y')
-    plt.tight_layout()
-    plt.show()
-
-# ---------- Compute and plot all distributions ----------
-def compute_and_plot_distributions(df):
-    """
-    Plots hourly, daily, weekly, monthly, yearly distributions.
-    """
-    hourly = df['datetime'].dt.hour.value_counts().reindex(range(24), fill_value=0).sort_index()
-    daily = df['datetime'].dt.date.value_counts().sort_index()
-    weekly = df['datetime'].dt.isocalendar().week.value_counts().sort_index()
-    monthly = df['datetime'].dt.month.value_counts().reindex(range(1, 13), fill_value=0).sort_index()
-    yearly = df['datetime'].dt.year.value_counts().sort_index()
-
-    plot_distribution(hourly, "Hour of Day", "Recordings", "Hourly Distribution", xticks=range(24))
-    plot_distribution(daily, "Date", "Recordings", "Daily Distribution", kind='line')
-    plot_distribution(weekly, "ISO Week", "Recordings", "Weekly Distribution")
-    plot_distribution(monthly, "Month", "Recordings", "Monthly Distribution", xticks=range(1, 13))
-    plot_distribution(yearly, "Year", "Recordings", "Yearly Distribution")
-
-# ---------- PLOT BY SPLITS ----------
-def plot_distributions_by_split(df):
-    """
-    Plots hourly, daily, weekly, monthly, and yearly distributions by split.
-    """
-    time_granularities = {
-        'Hourly': df['datetime'].dt.hour,
-        'Daily': df['datetime'].dt.date,
-        'Weekly': df['datetime'].dt.isocalendar().week,
-        'Monthly': df['datetime'].dt.month,
-        'Yearly': df['datetime'].dt.year
-    }
-
-    for name, series in time_granularities.items():
-        plt.figure(figsize=(12, 4))
-        for split in df['split'].unique():
-            subset = df[df['split'] == split]
-            counts = series[subset.index].value_counts().sort_index()
-            plt.plot(counts.index, counts.values, label=split.capitalize())
-
-        plt.title(f"{name} Distribution by Split")
-        plt.xlabel(name)
-        plt.ylabel("Number of Recordings")
-        plt.legend()
-        plt.grid(True, axis='y')
-        plt.tight_layout()
-        plt.show()
-  
 
 # Loading and processing audio files
 def process_audio(file_path, sr=22050, duration=None):
