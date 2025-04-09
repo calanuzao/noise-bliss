@@ -34,7 +34,7 @@ def load_data(data_path):
     for root, dirs, files in os.walk(data_path):
         for file in files:
 
-            if file.endswith(('.wav', '.mp3', '.ogg')):
+            if file.endswith(('.wav')):
                 file_path = os.path.join(root, file)
                 audio_files.append(file_path)
 
@@ -62,7 +62,67 @@ def process_audio(file_path, sr=22050, duration=None):
     np.ndarray
         Processed audio data
     """
-    audio, sr = librosa.load(file_path, ssr=sr, duration=duration)
-    # add more processing steps
+    audio, sr = librosa.load(file_path, sr=sr, duration=duration)
+    
+    # consistent length
+    target_length = int(sr * duration)
+    if len(audio) < target_length:
+        audio = np.pad(audio, (0, target_length - len(audio)))
+    else:
+        audio = audio[:target_length]
 
-    return audio
+    # mel spectogram
+    # https://librosa.org/doc/latest/generated/librosa.feature.melspectrogram.html#librosa.feature.melspectrogram
+    spectrogram = librosa.feature.melspectrogram(
+        y=audio,
+        sr=sr,
+        n_mels=128
+    ) 
+
+    # decibel conversion
+    spectrogram_dB = librosa.power_todb(spectrogram, ref=np.max)
+
+    # normalize
+    spectrogram_dB = (spectrogram_dB - spectrogram_dB.min()) / (spectrogram_dB.max() - spectrogram_dB.min())
+
+    return spectrogram_dB
+
+# creating dataset
+def data_set(data_dir, batch_size, target_shape, shuffle=True):
+    """
+    Creates dataset from the audio files
+    """
+
+    audio_files = []
+    labels = []
+    class_names = sorted(os.listdir(data_dir))
+
+    for class_idx, class_name in enumerate(class_names):
+        class_dir = os.path.join(data_dir, class_name)
+        for audio_file in os.listdir(class_dir):
+            if audio_file.endswith(('.wav')):
+                audio_files.append(os.path.join(class_dir, audio_file))
+                labels.append(class_idx)
+
+    def generator():
+        for audio_file, label in zip(audio_files, labels):
+            spe = process_audio(audio_file)
+            if spec is not None:
+                spec = tf.image.resize(spec[..., np.newaxis], target_shape)
+                yield spec, label
+
+    dataset = tf.data.Dataset.from_generator(
+        generator,
+        output_signature=(
+            tf.TensorSpec(shape=(target_shape[0], target_shape[1], 1), dtype=tf.float32),
+            tf.TensorSpec(shape=(), dtype=tf.int32)
+        )
+    )
+    
+    if shuffle:
+        dataset = dataset.shuffle(buffer_size=1000)
+
+    dataset = dataset.batch(batch_size)
+    dataset = dataset.prefetch(tf.data.AUTOTUNE)
+
+    return dataset
