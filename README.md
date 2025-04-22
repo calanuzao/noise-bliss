@@ -22,3 +22,6 @@ TODO:
     * Further divide test, validation, training out of temporal data scale
     * Call model for classification
         * Embedding
+
+# Common Errors
+- Using an autoencoder architecure where the input and output should mach is not efficient with a classification model (which outputs class probabilities)

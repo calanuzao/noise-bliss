@@ -66,30 +66,35 @@ def process_audio(file_path, sr=22050, duration=None):
     np.ndarray
         Processed audio data
     """
-    audio, sr = librosa.load(file_path, sr=sr, duration=duration)
-    
-    # consistent length
-    target_length = int(sr * duration)
-    if len(audio) < target_length:
-        audio = np.pad(audio, (0, target_length - len(audio)))
-    else:
-        audio = audio[:target_length]
+    try:
+        audio, sr = librosa.load(file_path, sr=sr, duration=duration)
 
-    # mel spectogram
-    # https://librosa.org/doc/latest/generated/librosa.feature.melspectrogram.html#librosa.feature.melspectrogram
-    spectrogram = librosa.feature.melspectrogram(
-        y=audio,
-        sr=sr,
-        n_mels=128
-    ) 
+        # check if audio is loaded succesfully
+        if audio is None or len(audio) == 0:
+            print(f"Warning: Failed to load audio from {file_path}")
+            return None
 
-    # decibel conversion
-    spectrogram_dB = librosa.power_todb(spectrogram, ref=np.max)
+        # mel spectogram
+        # https://librosa.org/doc/latest/generated/librosa.feature.melspectrogram.html#librosa.feature.melspectrogram
+        spectrogram = librosa.feature.melspectrogram(
+            y=audio,
+            sr=sr,
+            n_mels=128
+        ) 
 
-    # normalize
-    spectrogram_dB = (spectrogram_dB - spectrogram_dB.min()) / (spectrogram_dB.max() - spectrogram_dB.min())
+        # decibel conversion
+        spectrogram_dB = librosa.power_todb(spectrogram, ref=np.max)
 
-    return spectrogram_dB
+        # normalize
+        spectrogram_dB = (spectrogram_dB - spectrogram_dB.min()) / (
+            spectrogram_dB.max() - spectrogram_dB.min() + 1e-6
+        )
+
+        return spectrogram_dB
+
+    except Exception as e:
+        print(f"Error processinf {file_path}: {str(e)}")
+        return None
 
 # temporal data
 def construct_datetime(df):
@@ -121,30 +126,48 @@ def construct_location_id(df):
 # creating dataset
 def data_set(file_list, batch_size, target_shape, shuffle=True):
     """
-    Creates dataset from the list of audio files
+    Creates dataset from the list of audio files by properly 
+    handling audio processing.
     """
+    
+    print(f"Creating dataset with {len(file_list)} files")
+    
     def generator():
+        count = 0
+        errors = 0
         for audio_file in file_list:
-            spec = process_audio(audio_file)
-            if spec is not None:
-                spec = tf.image.resize(spec[..., np.newaxis], target_shape)
-                yield spec
+            try:
+                spec = process_audio(audio_file)
+                if spec is not None:
+                    # adding batch dimension and channel dimension
+                    spec = tf.image.resize(spec[..., np.newaxis], target_shape)
+                    # create target
+                    count += 1 
+                    yield spec, spec
+                else:
+                    errors += 1
+                    print(f"Failed to process {audio_file}")
+            except Exception as e:
+                errors += 1
+                print(f"Error processing {audio_file}: {str(e)}")
 
-        dataset = tf.data.Dataset.from_generator(
+    # defining output signature for both input and target
+    output_signature = (
+        tf.TensorSpec(shape=(target_shape[0], target_shape[1], 1), dtype=tf.float32),
+        tf.TensorSpec(shape=(target_shape[0], target_shape[1], 1), dtype=tf.float32),
+    )
+    dataset = tf.data.Dataset.from_generator(
             generator,
-            output_signature=tf.TensorSpec(
-                shape=(target_shape[0], target_shape[1], 1),
-                dtype=tf.float32       
-            )
+            output_signature=output_signature
         )
 
-        if shuffle:
+    if shuffle:
             dataset = dataset.shuffle(buffer_size=1000)
 
-        dataset = dataset.batch(batch_size)
-        dataset = dataset.prefetch(tf.data.AUTOTUNE)
+    dataset = dataset.batch(batch_size)
+    dataset = dataset.prefetch(tf.data.AUTOTUNE)
 
-        return dataset
+    return dataset
 
 ### ============= Plotting ============= ###
 
