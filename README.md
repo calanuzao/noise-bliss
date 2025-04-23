@@ -6,7 +6,7 @@ Denoising Algorithms for Acoustic Scene Classification in Deep Learning Models
 # TODOs:
 - Schedule a meeting with Prof. Fuentes (Thu Apr 24 @10:30am EST)
     - models.py
-    - Train a portion of a dataset $/rightarrow$ move forward
+    - Train a portion of a dataset $\rightarrow$ move forward
 
 * Different branches for organization
 
