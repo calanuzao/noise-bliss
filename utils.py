@@ -1,7 +1,11 @@
 from sklearn.metrics import classification_report
 import matplotlib.pyplot as plt
+from tcn import TCN
 import tensorflow as tf
 import keras
+from tensorflow import keras 
+from keras import layers
+from tensorflow.keras.models import model_from_json
 import numpy as np
 import random
 import librosa
@@ -11,43 +15,64 @@ import os
 import datetime
 import pandas as pd
 from pathlib import Path
+import mirdata
+
+eps = np.finfo(float).eps
+
+# https://zenodo.org/records/3966543
+label_taxonomy = {
+    'engine': 0,
+    'machinery-impact': 1,
+    'non-machinery-impact': 2,
+    'powered-saw': 3,
+    'alert-signal': 4,
+    'music':5,
+    'human-voice': 6,
+    'dog': 7
+}
 
 ### ============= Data Generation Functions ============= ###
 
-def load_data(data_path):
+def load_data(data_home, dataset_name='sonyc-ust', version='1.0', track_ids=None):
     """
-    Load audio files and their corresponding characteristics.
+    Load data from a specified music dataset and return the audio file paths
+    and their corresponding labels.
 
-    Parameters:
-    data_path: str
-            Path to the directory containing the SONYC-UST Data
+    Parameters
+    ----------
+    data_home : str
+        The root directory where the dataset is stored.
+    dataset_name : str, optional
+        The name of the dataset to load, by default 'gtzan_genre'.
+    version : str, optional
+        The version of the dataset to load, by default '1.0'.
+    track_ids : list of str, optional
+        A list of track IDs to load from the dataset, by default None.
 
-    Returns:
-    Tuple[np.ndarray, np.ndarray]
-        A tuple of the two numpy arrays.
-        The first array contains the file paths of the audio files, 
-        and the second array contains their corresponding labels.
+    Returns
+    -------
+    audio_file_paths : list of str
+        A list of audio file paths from the specified dataset.
+    labels : list of int
+        A list of corresponding labels for the audio files.
     """
 
-    if isinstance(data_path, bytes):
-        data_path = data_path.decode("utf-8")
+    dataset = mirdata.initialize(dataset_name,
+                                 data_home=data_home.decode('utf8'),
+                                 version=version)
 
-    audio_files = []
+    ids = dataset.track_ids
+    audio_file_paths = []
     labels = []
 
-    for root, dirs, files in os.walk(data_path):
-        for file in files:
+    if track_ids is not None:
+        ids = [cid.decode('utf8') for cid in track_ids]
+    for fid in ids:
+        track = dataset.track(fid)
+        audio_file_paths.append(track.audio_path)
+        labels.append(label_taxonomy[track.genre])
 
-            if file.endswith(('.wav')):
-                file_path = os.path.join(root, file)
-                audio_files.append(file_path)
-
-                label = os.path.basename(root)
-                if isinstance(label, bytes):
-                    labels = label.decode('utf8')
-                labels.append(label)
-
-    return np.array(audio_files), np.array(labels)
+    return audio_file_paths, labels
             
 # Loading and processing audio files
 def process_audio(file_path, sr=22050, duration=None):

@@ -1,6 +1,14 @@
+from sklearn.metrics import classification_report
+import matplotlib.pyplot as plt
+from tcn import TCN
 import tensorflow as tf
+import keras
 from tensorflow import keras 
 from keras import layers
+from tensorflow.keras.models import model_from_json
+import numpy as np
+import random
+import librosa
 
 def autoencoder_model(input_shape):
     """
