@@ -129,45 +129,34 @@ def data_set(file_list, batch_size, target_shape, shuffle=True):
     Creates dataset from the list of audio files by properly 
     handling audio processing.
     """
-    
-    print(f"Creating dataset with {len(file_list)} files")
+    if not file_list:
+        raise ValueError("No files provided to create dataset")
     
     def generator():
         count = 0
         errors = 0
-        for audio_file in file_list:
-            try:
-                spec = process_audio(audio_file)
-                if spec is not None:
-                    # adding batch dimension and channel dimension
-                    spec = tf.image.resize(spec[..., np.newaxis], target_shape)
-                    # create target
-                    count += 1 
-                    yield spec, spec
-                else:
+        while True:
+            if shuffle:
+                random.shuffle(file_list)
+            for audio_file in file_list:
+                try:
+                    spec = process_audio(audio_file)
+                    if spec is not None:
+                        spec = tf.image.resize(spec[..., np.newaxis], target_shape)
+                except Exception as e:
                     errors += 1
-                    print(f"Failed to process {audio_file}")
-            except Exception as e:
-                errors += 1
-                print(f"Error processing {audio_file}: {str(e)}")
-
-    # defining output signature for both input and target
-    output_signature = (
-        tf.TensorSpec(shape=(target_shape[0], target_shape[1], 1), dtype=tf.float32),
-        tf.TensorSpec(shape=(target_shape[0], target_shape[1], 1), dtype=tf.float32),
-    )
-    dataset = tf.data.Dataset.from_generator(
-            generator,
-            output_signature=output_signature
+                    print(f"Error processing {audio_file}: {str(e)}")
+            if count == 0:
+                raise ValueError("NO valid audio files processed")
+            
+    return tf.data.Dataset.from_generator(
+        generator,
+        output_signature=(
+            tf.TensorSpec(shape=(target_shape[0], target_shape[1], 1), dtype=tf.float32),
+            tf.TensorSpec(shape=(target_shape[0], target_shape[1], 1), dtype=tf.float32)
         )
-
-    if shuffle:
-            dataset = dataset.shuffle(buffer_size=1000)
-
-    dataset = dataset.batch(batch_size)
-    dataset = dataset.prefetch(tf.data.AUTOTUNE)
-
-    return dataset
+    ).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+        
 
 ### ============= Plotting ============= ###
 
