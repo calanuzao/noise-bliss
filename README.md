@@ -3,6 +3,10 @@ Denoising Algorithms for Acoustic Scene Classification in Deep Learning Models
 
 ### Audio is Multi-Class so changin los function is crucial
 
+# Validating Data
+- (DON'T USE) https://mirdata.readthedocs.io/en/stable/
+- (USE INSTEAD) https://soundata.readthedocs.io/en/latest/index.html
+
 # TODOs:
     - Feed data in homework three (https://github.com/dl4m/homework-3-calanuzao/tree/main)
     - YAMnet Model for Audio Classification

@@ -6,16 +6,18 @@ import keras
 from tensorflow import keras 
 from keras import layers
 from tensorflow.keras.models import model_from_json
-import numpy as np
 import random
 import librosa
 import librosa.display
 import cv2
 import os
 import datetime
-import pandas as pd
 from pathlib import Path
-import mirdata
+import soundata
+from soundata.core import Dataset
+import pandas as pd
+import os
+import numpy as np
 
 eps = np.finfo(float).eps
 
@@ -32,48 +34,100 @@ label_taxonomy = {
 }
 
 ### ============= Data Generation Functions ============= ###
+class SonycUSTDataset(Dataset):
+    """Custom soundata dataset for SONYC-UST"""
+    
+    def __init__(self, data_home):
+        self.data_home = data_home
+        self.annotations_path = os.path.join(data_home, 'annotations.csv')
+        self.audio_dir = os.path.join(data_home, 'audio')
+        
+    def load_audio(self, audio_file):
+        """Load audio file"""
+        audio_path = os.path.join(self.audio_dir, audio_file)
+        return soundata.load_audio(audio_path)
+        
+    def load_annotations(self):
+        """Load annotations from CSV file"""
+        if not os.path.exists(self.annotations_path):
+            raise FileNotFoundError(f"Annotations file not found at {self.annotations_path}")
+        return pd.read_csv(self.annotations_path)
 
-def load_data(data_home, dataset_name='sonyc-ust', version='1.0', track_ids=None):
+def load_data(data_home):
     """
-    Load data from a specified music dataset and return the audio file paths
-    and their corresponding labels.
+    Load SONYC-UST dataset.
 
     Parameters
     ----------
     data_home : str
-        The root directory where the dataset is stored.
-    dataset_name : str, optional
-        The name of the dataset to load, by default 'gtzan_genre'.
-    version : str, optional
-        The version of the dataset to load, by default '1.0'.
-    track_ids : list of str, optional
-        A list of track IDs to load from the dataset, by default None.
+        The root directory containing the SONYC-UST dataset
 
     Returns
     -------
     audio_file_paths : list of str
-        A list of audio file paths from the specified dataset.
-    labels : list of int
-        A list of corresponding labels for the audio files.
+        List of paths to audio files
+    labels : list of list
+        List of multi-hot encoded labels for each audio file
     """
-
-    dataset = mirdata.initialize(dataset_name,
-                                 data_home=data_home.decode('utf8'),
-                                 version=version)
-
-    ids = dataset.track_ids
-    audio_file_paths = []
-    labels = []
-
-    if track_ids is not None:
-        ids = [cid.decode('utf8') for cid in track_ids]
-    for fid in ids:
-        track = dataset.track(fid)
-        audio_file_paths.append(track.audio_path)
-        labels.append(label_taxonomy[track.genre])
-
-    return audio_file_paths, labels
+    try:
+        # Get paths
+        audio_dir = os.path.join(data_home, 'audio')
+        annotations_path = os.path.join(data_home, 'annotations.csv')
+        
+        if not os.path.exists(audio_dir):
+            raise ValueError(f"Audio directory not found: {audio_dir}")
+        if not os.path.exists(annotations_path):
+            raise ValueError(f"Annotations file not found: {annotations_path}")
             
+        # Load annotations
+        annotations_df = pd.read_csv(annotations_path)
+        
+        # Map taxonomy to column names
+        column_mapping = {
+            'engine': '1_engine_presence',
+            'machinery-impact': '2_machinery-impact_presence',
+            'non-machinery-impact': '3_non-machinery-impact_presence',
+            'powered-saw': '4_powered-saw_presence',
+            'alert-signal': '5_alert-signal_presence',
+            'music': '6_music_presence',
+            'human-voice': '7_human-voice_presence',
+            'dog': '8_dog_presence'
+        }
+        
+        audio_file_paths = []
+        labels = []
+        
+        # Process unique audio files (avoid duplicates from multiple annotators)
+        unique_files = annotations_df['audio_filename'].unique()
+        
+        for audio_file in unique_files:
+            file_path = os.path.join(audio_dir, audio_file)
+            if os.path.exists(file_path):
+                # Get all annotations for this file
+                file_annotations = annotations_df[annotations_df['audio_filename'] == audio_file]
+                
+                # Create multi-hot encoded label
+                label = [0] * len(label_taxonomy)
+                
+                # For each category in our taxonomy
+                for sound_category, column_name in column_mapping.items():
+                    # Get all values for this category (from different annotators)
+                    values = file_annotations[column_name].values
+                    # If any annotator marked it as present (1), count it as present
+                    if 1 in values:
+                        label[label_taxonomy[sound_category]] = 1
+                
+                audio_file_paths.append(file_path)
+                labels.append(label)
+        
+        if not audio_file_paths:
+            raise ValueError(f"No valid audio files found in {audio_dir}")
+            
+        return audio_file_paths, labels
+        
+    except Exception as e:
+        raise Exception(f"Error loading data: {str(e)}")
+    
 # Loading and processing audio files
 def process_audio(file_path, sr=22050, duration=None):
     """
@@ -149,38 +203,86 @@ def construct_location_id(df):
     return df
 
 # creating dataset
-def data_set(file_list, batch_size, target_shape, shuffle=True):
-    """
-    Creates dataset from the list of audio files by properly 
-    handling audio processing.
-    """
-    if not file_list:
-        raise ValueError("No files provided to create dataset")
+def data_set(file_paths, batch_size, target_shape, shuffle=True):
+    """Create a TensorFlow dataset from audio files.
     
+    Args:
+        file_paths: List of audio file paths
+        batch_size: Number of samples per batch
+        target_shape: Tuple of (height, width) for mel spectrograms
+        shuffle: Whether to shuffle the dataset
+        
+    Returns:
+        TensorFlow dataset
+    """
+    def get_label(audio_path):
+        """Get label for an audio file using debug_df"""
+        filename = os.path.basename(audio_path)
+        file_annotations = debug_df[debug_df['audio_filename'] == filename]
+        
+        # Create multi-hot encoded label
+        label = [0] * len(label_taxonomy)
+        for category, idx in label_taxonomy.items():
+            column = f"{idx+1}_{category}_presence"
+            if column in file_annotations.columns and (file_annotations[column] == 1).any():
+                label[idx] = 1
+        return np.array(label, dtype=np.float32)
+
     def generator():
-        count = 0
-        errors = 0
-        while True:
-            if shuffle:
-                random.shuffle(file_list)
-            for audio_file in file_list:
-                try:
-                    spec = process_audio(audio_file)
-                    if spec is not None:
-                        spec = tf.image.resize(spec[..., np.newaxis], target_shape)
-                except Exception as e:
-                    errors += 1
-                    print(f"Error processing {audio_file}: {str(e)}")
-            if count == 0:
-                raise ValueError("NO valid audio files processed")
-            
-    return tf.data.Dataset.from_generator(
+        """Generate (mel_spectrogram, label) pairs"""
+        valid_files = 0
+        for file_path in file_paths:
+            try:
+                # Load audio
+                waveform, sr = torchaudio.load(file_path)
+                waveform = waveform.numpy()
+                
+                # Generate mel spectrogram
+                spec = mel_spectrogram(
+                    waveform, 
+                    sr,
+                    n_mels=target_shape[0],
+                    hop_length=512
+                )
+                
+                # Resize if needed
+                if spec.shape != target_shape:
+                    spec = tf.image.resize(spec, target_shape)
+                
+                # Add channel dimension
+                spec = tf.expand_dims(spec, axis=-1)
+                
+                # Get label
+                label = get_label(file_path)
+                
+                valid_files += 1
+                yield spec, label
+                
+            except Exception as e:
+                print(f"Error processing {file_path}: {str(e)}")
+                continue
+        
+        if valid_files == 0:
+            raise ValueError("No valid audio files processed")
+    
+    # Create dataset
+    output_signature = (
+        tf.TensorSpec(shape=(target_shape[0], target_shape[1], 1), dtype=tf.float32),
+        tf.TensorSpec(shape=(len(label_taxonomy),), dtype=tf.float32)
+    )
+    
+    dataset = tf.data.Dataset.from_generator(
         generator,
-        output_signature=(
-            tf.TensorSpec(shape=(target_shape[0], target_shape[1], 1), dtype=tf.float32),
-            tf.TensorSpec(shape=(target_shape[0], target_shape[1], 1), dtype=tf.float32)
-        )
-    ).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+        output_signature=output_signature
+    )
+    
+    if shuffle:
+        dataset = dataset.shuffle(buffer_size=1000)
+        
+    dataset = dataset.batch(batch_size)
+    dataset = dataset.prefetch(tf.data.AUTOTUNE)
+    
+    return dataset
         
 
 ### ============= Plotting ============= ###
