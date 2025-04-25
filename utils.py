@@ -2,6 +2,7 @@ from sklearn.metrics import classification_report
 import matplotlib.pyplot as plt
 from tcn import TCN
 import tensorflow as tf
+import tensorflow_io as tfio
 import keras
 from tensorflow import keras 
 from keras import layers
@@ -203,68 +204,91 @@ def construct_location_id(df):
     return df
 
 # creating dataset
-def data_set(file_paths, batch_size, target_shape, shuffle=True):
+def data_set(file_paths, batch_size, target_shape, annotations_df, shuffle=True):
     """Create a TensorFlow dataset from audio files.
     
-    Args:
-        file_paths: List of audio file paths
-        batch_size: Number of samples per batch
-        target_shape: Tuple of (height, width) for mel spectrograms
-        shuffle: Whether to shuffle the dataset
-        
-    Returns:
-        TensorFlow dataset
+    Parameters
+    ----------
+    file_paths : list of str
+        List of paths to audio files
+    batch_size : int
+        Size of batches to create
+    target_shape : tuple
+        Target shape for spectrograms (height, width)
+    annotations_df : pandas.DataFrame
+        DataFrame containing annotations for audio files
+    shuffle : bool, optional
+        Whether to shuffle the dataset, by default True
     """
+    def process_audio_file(file_path):
+        try:
+            # Load and process audio using librosa
+            audio, sr = librosa.load(file_path, sr=48000)  # SONYC-UST uses 48kHz
+            
+            # Generate mel spectrogram
+            spec = librosa.feature.melspectrogram(
+                y=audio,
+                sr=sr,
+                n_mels=target_shape[0],
+                hop_length=512
+            )
+            
+            # Convert to dB scale and normalize
+            spec_db = librosa.power_to_db(spec, ref=np.max)
+            spec_norm = (spec_db - spec_db.min()) / (spec_db.max() - spec_db.min() + 1e-6)
+            
+            # Resize if needed
+            if spec_norm.shape != target_shape:
+                spec_norm = cv2.resize(spec_norm, (target_shape[1], target_shape[0]))
+            
+            # Add channel dimension
+            spec_norm = np.expand_dims(spec_norm, axis=-1)
+            
+            return spec_norm.astype(np.float32)
+            
+        except Exception as e:
+            print(f"Error processing {file_path}: {str(e)}")
+            return None
+
     def get_label(audio_path):
-        """Get label for an audio file using debug_df"""
-        filename = os.path.basename(audio_path)
-        file_annotations = debug_df[debug_df['audio_filename'] == filename]
-        
-        # Create multi-hot encoded label
-        label = [0] * len(label_taxonomy)
-        for category, idx in label_taxonomy.items():
-            column = f"{idx+1}_{category}_presence"
-            if column in file_annotations.columns and (file_annotations[column] == 1).any():
-                label[idx] = 1
-        return np.array(label, dtype=np.float32)
+        try:
+            filename = os.path.basename(audio_path)
+            file_annotations = annotations_df[annotations_df['audio_filename'] == filename]
+            
+            if file_annotations.empty:
+                print(f"No annotations found for {filename}")
+                return None
+                
+            label = [0] * len(label_taxonomy)
+            for category, idx in label_taxonomy.items():
+                column = f"{idx+1}_{category}_presence"
+                if column in file_annotations.columns and (file_annotations[column] == 1).any():
+                    label[idx] = 1
+            return np.array(label, dtype=np.float32)
+        except Exception as e:
+            print(f"Error getting label for {audio_path}: {str(e)}")
+            return None
 
     def generator():
-        """Generate (mel_spectrogram, label) pairs"""
         valid_files = 0
         for file_path in file_paths:
             try:
-                # Load audio
-                waveform, sr = torchaudio.load(file_path)
-                waveform = waveform.numpy()
-                
-                # Generate mel spectrogram
-                spec = mel_spectrogram(
-                    waveform, 
-                    sr,
-                    n_mels=target_shape[0],
-                    hop_length=512
-                )
-                
-                # Resize if needed
-                if spec.shape != target_shape:
-                    spec = tf.image.resize(spec, target_shape)
-                
-                # Add channel dimension
-                spec = tf.expand_dims(spec, axis=-1)
-                
-                # Get label
-                label = get_label(file_path)
-                
-                valid_files += 1
-                yield spec, label
-                
+                # Process audio
+                spec = process_audio_file(file_path)
+                if spec is not None:
+                    # Get label
+                    label = get_label(file_path)
+                    if label is not None:
+                        valid_files += 1
+                        yield spec, label
+                    
             except Exception as e:
-                print(f"Error processing {file_path}: {str(e)}")
+                print(f"Error in generator for {file_path}: {str(e)}")
                 continue
         
         if valid_files == 0:
             raise ValueError("No valid audio files processed")
-    
+
     # Create dataset
     output_signature = (
         tf.TensorSpec(shape=(target_shape[0], target_shape[1], 1), dtype=tf.float32),
@@ -278,12 +302,9 @@ def data_set(file_paths, batch_size, target_shape, shuffle=True):
     
     if shuffle:
         dataset = dataset.shuffle(buffer_size=1000)
-        
-    dataset = dataset.batch(batch_size)
-    dataset = dataset.prefetch(tf.data.AUTOTUNE)
     
-    return dataset
-        
+    return dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+
 
 ### ============= Plotting ============= ###
 
