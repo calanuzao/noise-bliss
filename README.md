@@ -36,3 +36,7 @@ Denoising Algorithms for Acoustic Scene Classification in Deep Learning Models
     - Understanding the dynamics of a system is crucial. By dynamics it is meant its periodic cycles, how it trends over time, its regular regime and its sudden spikes.
     - For the SONY-UST dataset an event detection algorithm is crucial in order to identify the occurrence of a specific expected event within a continpus data audio stream for acoustic scene classification.
     - Measuring periodicity in the data
+
+# Warnings
+    - UserWarning: Your input ran out of data; interrupting training. Make sure that your dataset or generator can generate at least steps_per_epoch epochs batches. You may need to use the .repeat() function when building your dataset. self._interrupted_warning()
+    - Adding .repeat() to data_set creation might solve the issue

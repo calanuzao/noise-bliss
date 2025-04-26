@@ -34,7 +34,7 @@ label_taxonomy = {
     'dog': 7
 }
 
-### ============= Data Generation Functions ============= ###
+### ============= Custom Validation with Soun[D]ata ============= ###
 class SonycUSTDataset(Dataset):
     """Custom soundata dataset for SONYC-UST"""
     
@@ -53,6 +53,8 @@ class SonycUSTDataset(Dataset):
         if not os.path.exists(self.annotations_path):
             raise FileNotFoundError(f"Annotations file not found at {self.annotations_path}")
         return pd.read_csv(self.annotations_path)
+    
+### ============= Data Creation ============= ###
 
 def load_data(data_home):
     """
@@ -270,6 +272,7 @@ def data_set(file_paths, batch_size, target_shape, annotations_df, shuffle=True)
             return None
 
     def generator():
+        # adding data generation from data generation functions
         valid_files = 0
         for file_path in file_paths:
             try:
@@ -280,14 +283,17 @@ def data_set(file_paths, batch_size, target_shape, annotations_df, shuffle=True)
                     label = get_label(file_path)
                     if label is not None:
                         valid_files += 1
-                        yield spec, label
+                        # Apply augmentation only to training data
+                        if shuffle:  # shuffle indicates training data
+                            spec = augment_spectrogram(spec)
+                    yield spec, label 
                     
             except Exception as e:
                 print(f"Error in generator for {file_path}: {str(e)}")
                 continue
         
         if valid_files == 0:
-            raise ValueError("No valid audio files processed")
+            raise ValueError("No valid audio files processed: Skill Issue Detected")
 
     # Create dataset
     output_signature = (
@@ -305,8 +311,23 @@ def data_set(file_paths, batch_size, target_shape, annotations_df, shuffle=True)
     
     return dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
 
+### ============= Data Augmentation Functions ============= ###
 
-### ============= Plotting ============= ###
+def augment_spectrogram(spec):
+    """
+    Augmenting mel spectrogram with random transformations.
+    """
+    # frequency masking
+    freq_mask = tf.random.uniform([], 0, 20, dtype=tf.int32)
+    spec = tf.roll(spec, freq_mask, axis=0)
+
+    # time masking 
+    time_mask = tf.random.uniform([], 0, 20, dtype=tf.int32)
+    spec = tf.roll(spec, time_mask, axis=1)
+
+    return spec
+
+### ============= Plotting Data Functions ============= ###
 
 def plot_distribution(data, xlabel, ylabel, title, kind='bar', xticks=None):
     plt.figure(figsize=(10,4))

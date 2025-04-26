@@ -81,8 +81,9 @@ def train_model(model, train_data, validation_data, epochs=50):
     model_callbacks = [
         callbacks.EarlyStopping(
             monitor='val_loss',
-            patience=5,
-            restore_best_weights=True
+            patience=3,
+            restore_best_weights=True,
+            verbose=1
         ),
         callbacks.ModelCheckpoint(
             'best_model.h5',
@@ -91,9 +92,10 @@ def train_model(model, train_data, validation_data, epochs=50):
         ),
         callbacks.ReduceLROnPlateau(
             monitor='val_loss',
-            factor=0.5,
-            patience=3,
-            min_lr=1e-5
+            factor=0.2,
+            patience=2,
+            min_lr=1e-6,
+            verbose=1
         )
     ]
 
