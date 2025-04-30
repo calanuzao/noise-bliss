@@ -1,0 +1,18 @@
+Chris Lanuza
+- Custom Soundata Wrapper Implementation: Developed the specialized SonycUST class extending Soundata's functionality to efficiently handle the SONYC-UST dataset
+- Project Pipeline Architecture: Designed the end-to-end data processing and model training workflow
+- Git Version Control Management: Established repository structure with main/train branch organization, managed commits, merges, and conflict resolution throughout development lifecycle
+- Data Structure Engineering: Created optimized data structures for audio representation, multi-label annotations, and model input/output interfaces
+- Data Validation Framework: Implemented robust validation mechanisms to ensure dataset integrity, detect anomalies, and handle edge cases in the audio processing pipeline
+- Initial Training Methodology: Developed baseline training protocols for model experimentation, including hyperparameter ranges, loss function selection, and evaluation metrics for multi-label classification
+
+Teddy Ryles:
+- Advanced Model Architecture Engineering: Developed sophisticated neural network architectures including baseline CNN models, improved architectures with class-weight informed learning, and YAMNet transfer learning implementations
+- Temporal Classification Development: Created specialized temporal encoding mechanisms to capture time-dependent audio patterns
+- Comparative Analysis Framework: Designed and implemented systematic comparison between CNN and YAMNet approaches for temporal classification tasks
+- Data Augmentation Strategy: Data augmentation techniques to address class imbalance issues in the SONYC-UST dataset, significantly improving model generalization
+- Model Integration with Data Pipeline: Ensured seamless integration between the custom wrapper data loading system and various model architectures, optimizing data flow for training efficiency
+
+Both:
+- Transfer Learning Implementation: Adapted and fine-tuned the YAMNet pre-trained models
+- Utilized HW03 as a baseline 
