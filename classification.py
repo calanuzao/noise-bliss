@@ -1,11 +1,35 @@
 # ============================================ #
 #               IMPORTS
 # ============================================ #
-import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers, models, callbacks, optimizers, metrics, regularizers
+import os
+import glob
 import numpy as np
-from utils import augment_spectrogram  # Data augmentation utility from utils.py
+import pandas as pd
+import librosa
+import tensorflow as tf
+import tensorflow_hub as hub
+import matplotlib.pyplot as plt
+
+from tensorflow import keras
+from tensorflow.keras import (
+    layers,
+    models,
+    callbacks,
+    optimizers,
+    metrics,
+    regularizers,
+    Input,
+    Model
+)
+from tensorflow.keras.layers import (
+    Dense,
+    Dropout,
+    Concatenate,
+    Conv1D,
+    GlobalAveragePooling1D
+)
+
+from utils import augment_spectrogram  # Custom utility for data augmentation
 
 # ============================================ #
 #            MODEL DEFINITIONS
@@ -111,6 +135,24 @@ def tcn_model(input_shape, num_classes, nb_filters=64, kernel_size=3, nb_stacks=
 
     return keras.Model(input_layer, output_layer)
 
+# Build multimodal Conv1D + metadata model
+def build_multimodal_model(audio_shape, temporal_shape, num_classes):
+    audio_input = Input(shape=audio_shape, name="audio_input")
+    x_audio = Conv1D(64, kernel_size=3, padding="causal", activation="relu")(audio_input)
+    x_audio = GlobalAveragePooling1D()(x_audio)
+
+    temporal_input = Input(shape=(temporal_shape,), name="temporal_input")
+    x_temp = Dense(32, activation="relu")(temporal_input)
+
+    x = Concatenate()([x_audio, x_temp])
+    x = Dense(128, activation="relu")(x)
+    x = Dropout(0.5)(x)
+    output = Dense(num_classes, activation="sigmoid")(x)
+
+    return Model(inputs=[audio_input, temporal_input], outputs=output)
+
+
+
 # ============================================ #
 #         COMPILATION AND TRAINING
 # ============================================ #
@@ -156,7 +198,7 @@ def train_model(model, train_data, val_data, epochs=15, batch_size=None, steps_p
     model_callbacks = [
         callbacks.EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True, verbose=1),
         callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=2, min_lr=1e-6, verbose=1),
-        callbacks.ModelCheckpoint(filepath='best_model.keras', monitor='val_loss', save_best_only=True, verbose=1)
+        callbacks.ModelCheckpoint(filepath='best_model_baseline.keras', monitor='val_loss', save_best_only=True, verbose=1)
     ]
 
     history = model.fit(
@@ -172,31 +214,34 @@ def train_model(model, train_data, val_data, epochs=15, batch_size=None, steps_p
 
     return history
 
-# ============================================ #
-#         AUGMENTATION & CLASS WEIGHTS
-# ============================================ #
-
 def class_weighted_augmentation(spec, label, class_weights):
     """
     Conditionally augment a spectrogram based on label imbalance score.
 
-    Args:
-        spec (tf.Tensor): Input spectrogram tensor (height, width, 1).
-        label (tf.Tensor): Multi-hot encoded label vector.
-        class_weights (tf.Tensor): Tensor of class weights.
+    Parameters
+    ----------
+    spec : tf.Tensor
+        Input mel spectrogram (H x W x 1).
+    label : tf.Tensor
+        Multi-hot encoded label vector.
+    class_weights : tf.Tensor
+        Class weighting vector for imbalance-aware augmentation.
 
-    Returns:
-        (spec, label): Augmented or original spectrogram and label.
+    Returns
+    -------
+    tuple (tf.Tensor, tf.Tensor)
+        Possibly augmented spectrogram and its label.
     """
     imbalance_score = tf.reduce_sum(label * class_weights)
-    prob = tf.math.sigmoid(imbalance_score - 1.0)  # Control augmentation probability
-
+    prob = tf.math.sigmoid(imbalance_score - 1.0)
     random_value = tf.random.uniform([], 0, 1)
 
-    def augment():
-        return augment_spectrogram(spec), label  # Apply random spec augmentation
-
-    return tf.cond(random_value < prob, augment, lambda: (spec, label))
+    # Both branches must be lambdas with no arguments
+    return tf.cond(
+        random_value < prob,
+        lambda: (augment_spectrogram(spec), label),
+        lambda: (spec, label)
+    )
 
 
 def build_cnn_model(input_shape=(128, 128, 1), num_classes=8):
