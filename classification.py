@@ -46,7 +46,9 @@ def cnn_model(input_shape, num_classes):
     return model 
 
 def tcn_block(input_layer, nb_filters, kernel_size, dilation_rate):
-    """Single TCN block with dilated convolutions"""
+    """
+    Single TCN block with dilated convolutions
+    """
     padding = (kernel_size - 1) * dilation_rate
     pad_layer = layers.ZeroPadding1D(padding)
     conv_layer = layers.Conv1D(
@@ -91,7 +93,9 @@ def tcn_model(input_shape, num_classes, nb_filters=64, kernel_size=3, nb_stacks=
     return model
 
 def compile_model(model, learning_rate=0.001):
-    """Compile model with standard settings for multi-label classification"""
+    """
+    Compile model with standard settings for multi-label classification
+    """
     optimizer = keras.optimizers.Adam(learning_rate=learning_rate)
     model.compile(
         optimizer=optimizer,
@@ -101,7 +105,9 @@ def compile_model(model, learning_rate=0.001):
     return model
 
 def train_model(model, train_data, val_data, epochs=50, batch_size=32):
-    """Train model with early stopping and learning rate reduction"""
+    """
+    Train model with early stopping and learning rate reduction
+    """
     callbacks = [
         keras.callbacks.EarlyStopping(
             monitor='val_loss',

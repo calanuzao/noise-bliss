@@ -1,0 +1,36 @@
+# Core dependencies
+tensorflow>=2.9.0
+numpy>=1.21.0
+pandas>=1.4.0
+matplotlib>=3.5.0
+scikit-learn>=1.0.0
+librosa>=0.9.0
+soundfile>=0.10.3
+
+# Dataset handling
+soundata>=0.1.0
+h5py>=3.6.0
+
+# Audio processing
+resampy>=0.2.2
+audiomentations>=0.20.0
+
+# Metrics and evaluation
+mir_eval>=0.6.0
+sed_eval>=0.2.1
+
+# Visualization
+seaborn>=0.11.2
+plotly>=5.5.0
+
+# Notebook environment
+jupyter>=1.0.0
+ipywidgets>=7.7.0
+
+# Optional - for model optimization
+optuna>=2.10.0
+tensorboard>=2.9.0
+
+# Optional - for deployment
+tensorflow-model-optimization>=0.7.0
+tensorflow-metal

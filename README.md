@@ -1,84 +1,128 @@
-# Noise Bliss: SONYC-UST Audio Event Detection Project
-Denoising Algorithms for Acoustic Scene Classification in Deep Learning Models
+# Noise Bliss: Urban Sound Classification with Deep Learning
+
+A comprehensive framework for environmental audio analysis using the SONYC-UST dataset with state-of-the-art deep learning techniques.
 
 ## Project Overview
-This project focuses on urban sound event detection using deep learning techniques (CNN and TCN architectures) applied to the SONYC-UST dataset. We've built a custom Soundata wrapper for the dataset and implemented a complete pipeline for audio processing, model training, and evaluation.
+
+Noise Bliss is an advanced acoustic scene analysis project focused on urban sound event detection. The system leverages deep learning architectures (CNN and TCN) to classify environmental sounds from the SONYC Urban Sound Tagging (SONYC-UST) dataset. This project represents a complete pipeline for audio processing, feature extraction, model training, and urban noise classification.
+
+<p align="center">
+  <img src="presentation/brainstorming.png" alt="Alt Text" width="300"/>
+</p>
 
 ## Key Components
 
 ### 1. Dataset Integration (`wrapper.py`)
-We created a custom Soundata wrapper for the SONYC-UST dataset:
-- Implemented `SonycUST` class extending Soundata's base functionality
-- Added methods for loading annotations, accessing audio files, and validating dataset structure
-- Integrated with SONYC's 8-class coarse-grained taxonomy
+Our custom Soundata wrapper enhances SONYC-UST dataset handling:
+- `SonycUST` class extending Soundata's base functionality
+- Comprehensive methods for annotation loading and audio file access
+- Support for SONYC's 8-class coarse-grained taxonomy
+- Robust dataset validation and integrity checking
 
 ### 2. Audio Processing Pipeline (`utils.py`)
-Enhanced the utilities module with:
-- Audio loading and processing functions
-- Spectrogram generation with consistent shapes
-- Data augmentation techniques
-- TensorFlow dataset creation
-- Visualization utilities for spectrograms and training metrics
+Specialized audio preprocessing utilities:
+- Audio loading with standardized sample rate conversion
+- Advanced spectrogram generation with consistent dimensionality
+- Real-time data augmentation (time shifting, pitch adjustment, noise addition)
+- Efficient TensorFlow dataset creation with prefetching
+- Visualization tools for spectrograms and model performance metrics
 
 ### 3. Model Architecture (`classification.py`)
-Implemented two different model architectures:
-- **CNN Model**: Convolutional Neural Network optimized for spectrogram input
-- **TCN Model**: Temporal Convolutional Network for handling time-series aspects
-- Added model compilation and training functions with appropriate metrics
+Multiple neural network architectures optimized for audio classification:
+- **CNN Model**: Multi-layer convolutional architecture with batch normalization
+- **TCN Model**: Temporal Convolutional Network with dilated causal convolutions
+- Custom training functions with multi-label optimization
+- Performance metrics tailored to urban sound classification tasks
+
+<p align="center">
+  <img src="presentation/architecture-summary.png" alt="Alt Text" width="300"/>
+</p>
+
 
 ### 4. Training Pipeline (`pipeline.ipynb`)
-Created a comprehensive notebook that:
-- Validates the dataset structure and integrity
-- Analyzes label distribution and temporal patterns
-- Processes audio files into spectrograms
-- Creates TensorFlow datasets for training and validation
-- Trains both CNN and TCN models
-- Visualizes training progress and model performance
+End-to-end training framework in a structured notebook:
+- Dataset validation and exploratory analysis
+- Audio feature extraction with visualization
+- Model training with hyperparameter optimization
+- Detailed performance evaluation and error analysis
+- Multi-label classification metrics reporting
 
 ## Data Insights
-- The SONYC-UST dataset contains 62,022 annotations
-- 8 coarse-grained sound categories
-- Rich metadata including location, time, and annotator information
-- Dataset is split into train/validation/test sets
-- Audio recordings have varying temporal patterns throughout the day
+- 62,022 annotations across the SONYC-UST dataset
+- 8 coarse-grained sound categories with multi-label assignments
+- Comprehensive metadata including geolocation and temporal information
+- Standardized train/validation/test splits
+- Temporal variation analysis across different times of day
 
-## Further Work
+## Implementation Journey
+The project evolved through several stages:
+
+1. **Initial Exploration** (`main.ipynb`):
+   - Dataset analysis and preliminary feature extraction
+   - Basic model prototyping and validation
+
+2. **Model Development** (`models.py`):
+   - Early architectural experiments
+   - Performance benchmarking across model variants
+
+3. **Optimized Implementation** (`pipeline.ipynb` & `classification.py`):
+   - Streamlined data processing workflow
+   - Advanced model architectures with improved convergence
+   - Comprehensive evaluation framework
+
+## Repository Structure
+
+The project is organized across two main branches:
+- **Main Branch**: Primarily used to test wrapper implementation and correct pipeline methodology. Contains the foundational code architecture and validation infrastructure.
+- **Train Branch**: Where all in-depth training was performed, containing extensive experimentation logs, hyperparameter tuning results, and optimized models.
+
+## Performance Metrics
+Our models achieve competitive results on the SONYC-UST benchmark:
+- Multi-label classification with specialized evaluation metrics
+- Class-wise performance analysis across urban sound categories
+- Robust handling of class imbalance and temporal variations
+
+## Future Work
 
 ### Immediate Tasks
 1. **Dataset Extension**:
-   - Complete the Soundata wrapper implementation
-   - Add support for fine-grained label taxonomy
+   - Complete the fine-grained label taxonomy support
+   - Add cross-dataset evaluation capabilities
 
 2. **Model Improvements**:
-   - Optimize hyperparameters for both CNN and TCN models
-   - Implement more advanced architectures (e.g., ResNet, Attention mechanisms)
-   - Add model checkpointing and early stopping
+   - Optimize architectures with attention mechanisms
+   - Implement ensemble methods for improved robustness
+   - Add model compression techniques for efficient deployment
 
 3. **Data Processing**:
-   - Enhance data augmentation techniques
-   - Experiment with different audio feature extraction methods
-   - Implement efficient data loading for larger sample sizes
+   - Enhance augmentation strategies for rare sound classes
+   - Experiment with additional audio feature representations
+   - Implement on-the-fly feature extraction for memory efficiency
 
 ### Future Directions
 1. **Multi-Label Evaluation**:
-   - Implement specialized metrics for multi-label classification
-   - Add class-wise metrics reporting
+   - Advanced metrics for partial matches in sound tagging
+   - Confidence calibration for multi-label predictions
 
 2. **Temporal Analysis**:
-   - Incorporate temporal context in predictions
-   - Analyze model performance across different times of day
+   - Long-term temporal pattern recognition
+   - Time-aware model architectures for context utilization
 
 3. **Deployment**:
-   - Create inference pipeline for real-time audio processing
-   - Convert models to TFLite for edge deployment
+   - Efficient inference pipeline for edge computing
+   - TFLite conversion with quantization for mobile deployment
+   - Real-time processing capabilities for acoustic monitoring
 
 ## Usage Instructions
-1. Install required packages: `pip install -r requirements.txt`
+1. Install dependencies: `pip install -r requirements.txt`
 2. Download the SONYC-UST dataset to `data/sonyc-ust/`
-3. Run data validation: Execute cells in `pipeline.ipynb`
-4. Train models: Use the training section in the notebook
+3. Validate dataset integrity using `pipeline.ipynb`
+4. Train models with configuration options in the notebook
+5. Evaluate and visualize results with the provided functions
 
 ## References
 - [SONYC-UST Dataset](https://zenodo.org/record/3966543)
 - [Soundata Documentation](https://soundata.readthedocs.io/)
 - [Urban Sound Tagging Challenge](https://www.kaggle.com/c/dcase2019-task5/)
+- [Deep Learning for Audio Signal Processing](https://ieeexplore.ieee.org/document/8683634)
+- [Environmental Sound Classification](https://www.mdpi.com/2076-3417/10/15/5231)
