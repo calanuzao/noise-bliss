@@ -34,8 +34,22 @@ import datetime
 from pathlib import Path
 import pandas as pd
 import numpy as np
+import tqdm
+from tqdm import tqdm
 
 eps = np.finfo(float).eps
+
+# Define the 8 coarse-grained label columns
+COARSE_PRESENCE_COLS = [
+    '1_engine_presence',
+    '2_machinery-impact_presence',
+    '3_non-machinery-impact_presence',
+    '4_powered-saw_presence',
+    '5_alert-signal_presence',
+    '6_music_presence',
+    '7_human-voice_presence',
+    '8_dog_presence'
+]
 
 # Taxonomy mapping for SONYC-UST dataset
 label_taxonomy = {
@@ -315,3 +329,160 @@ def plot_training_history(history):
     
     plt.tight_layout()
     plt.show()
+
+
+""" DATASET DEFINITIONS """
+
+def analyze_dataset(annotations):
+    """
+    Analyze general dataset characteristics, including:
+    - Split distribution
+    - Coarse label frequency
+    - Temporal (hourly) distribution
+
+    Parameters:
+    ----------
+    annotations : pd.DataFrame
+        DataFrame containing metadata and presence labels for each audio sample.
+    """
+    print("Dataset Analysis:")
+    
+    # --- Dataset split counts ---
+    print("\nSplit Distribution:")
+    print(annotations['split'].value_counts())
+    
+    # --- Coarse label presence counts ---
+    coarse_labels = [
+        col for col in annotations.columns 
+        if col.endswith('_presence') and len(col.split('_')) == 2
+    ]
+    
+    print("\nCoarse Label Distribution:")
+    total = len(annotations)
+    for label in coarse_labels:
+        count = annotations[label].sum()
+        print(f"{label}: {count} ({(count / total) * 100:.2f}%)")
+    
+    # --- Hour-of-day distribution ---
+    print("\nTemporal Distribution:")
+    print("Hours distribution:")
+    print(annotations['hour'].value_counts().sort_index())
+
+
+def visualize_distributions(annotations):
+    """
+    Visualize:
+    - Dataset split proportions
+    - Recording distribution by hour of day
+
+    Parameters:
+    ----------
+    annotations : pd.DataFrame
+        DataFrame with dataset metadata and labels.
+    """
+    plt.figure(figsize=(15, 10))  # Layout for 2 subplots
+
+    # --- Subplot 1: Split distribution ---
+    plt.subplot(2, 1, 1)
+    splits = annotations['split'].value_counts()
+    plt.bar(splits.index, splits.values)
+    plt.title('Dataset Split Distribution')
+    plt.ylabel('Number of Samples')
+
+    # --- Subplot 2: Hourly activity ---
+    plt.subplot(2, 1, 2)
+    hours = annotations['hour'].value_counts().sort_index()
+    plt.plot(hours.index, hours.values, marker='o')
+    plt.title('Hourly Distribution of Recordings')
+    plt.xlabel('Hour of Day')
+    plt.ylabel('Number of Recordings')
+    plt.grid(True)
+
+    plt.tight_layout()
+    plt.show()
+
+
+    # --- Compute Class Weights to Handle Imbalance ---
+def compute_class_weights(annotations, label_columns):
+    """
+    Compute inverse-frequency class weights based on label prevalence.
+    """
+    label_sums = annotations[label_columns].sum().values
+    total = len(annotations)
+    weights = total / (label_sums + 1e-6)  # Avoid division by zero
+    weights /= np.mean(weights)  # Normalize so mean = 1
+    return weights.tolist()
+
+
+def prepare_data(annotations, dataset, target_shape=(128, 128), max_samples=10000):
+    """
+    Prepare TensorFlow datasets for training and validation.
+    """
+    # Split annotations into train and validate subsets
+    train_df = annotations[annotations['split'] == 'train'].head(max_samples)
+    val_df = annotations[annotations['split'] == 'validate'].head(max_samples)
+
+    print(f"Using {len(train_df)} training samples and {len(val_df)} validation samples")
+
+    def create_tf_dataset(df, is_training=True):
+        """
+        Build TensorFlow dataset from file paths and multi-hot labels.
+        """
+        audio_files, labels = [], []
+
+        # --- Step 1: Verify all audio file paths and labels ---
+        for _, row in tqdm(df.iterrows(), total=len(df), desc="Checking audio paths"):
+            audio_path = dataset.get_audio_path(row['audio_filename'])
+            if audio_path is None:
+                print(f"File not found via get_audio_path: {row['audio_filename']}")
+            elif not os.path.exists(audio_path):
+                print(f"Path returned but file missing: {audio_path}")
+            else:
+                label = [row[col] for col in COARSE_PRESENCE_COLS]
+                audio_files.append(str(audio_path))
+                labels.append(label)
+
+        print(f"Found {len(audio_files)} valid audio files")
+
+        # --- Step 2: Convert to NumPy arrays ---
+        audio_files = np.array(audio_files)
+        labels = np.array(labels, dtype=np.float32)
+
+        # --- Step 3: Process spectrograms from audio files ---
+        processed_specs = []
+        processed_labels = []
+
+        for audio_file, label in tqdm(zip(audio_files, labels), total=len(audio_files), desc="Processing spectrograms"):
+            try:
+                spec = process_audio(audio_file, target_shape)
+                if spec is not None and spec.shape == (target_shape[0], target_shape[1], 1):
+                    processed_specs.append(spec)
+                    processed_labels.append(label)
+            except Exception as e:
+                print(f"Error processing {audio_file}: {e}")
+
+        # --- Step 4: Create tf.data.Dataset ---
+        if processed_specs:
+            processed_specs = np.stack(processed_specs)
+            processed_labels = np.stack(processed_labels)
+            ds = tf.data.Dataset.from_tensor_slices((processed_specs, processed_labels))
+        else:
+            ds = tf.data.Dataset.from_tensor_slices((
+                np.zeros((0, target_shape[0], target_shape[1], 1), dtype=np.float32),
+                np.zeros((0, len(COARSE_PRESENCE_COLS)), dtype=np.float32)
+            ))
+
+        # --- Step 5: Batch, Prefetch, Shuffle ---
+        ds = ds.batch(32)
+        ds = ds.prefetch(tf.data.AUTOTUNE)
+        
+        if is_training:
+            ds = ds.shuffle(1000)
+
+        return ds
+
+    # --- Create training and validation datasets ---
+    train_data = create_tf_dataset(train_df, is_training=True)
+    val_data = create_tf_dataset(val_df, is_training=False)
+
+    return train_data, val_data
