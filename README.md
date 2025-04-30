@@ -7,7 +7,7 @@ A comprehensive framework for environmental audio analysis using the SONYC-UST d
 Noise Bliss is an advanced acoustic scene analysis project focused on urban sound event detection. The system leverages deep learning architectures (CNN and TCN) to classify environmental sounds from the SONYC Urban Sound Tagging (SONYC-UST) dataset. This project represents a complete pipeline for audio processing, feature extraction, model training, and urban noise classification.
 
 <p align="center">
-  <img src="presentation/brainstorming.png" alt="Alt Text" width="300"/>
+  <img src="presentation/brainstorming.png" alt="Alt Text" width="800"/>
 </p>
 
 ## Key Components
@@ -35,7 +35,7 @@ Multiple neural network architectures optimized for audio classification:
 - Performance metrics tailored to urban sound classification tasks
 
 <p align="center">
-  <img src="presentation/architecture-summary.png" alt="Alt Text" width="300"/>
+  <img src="presentation/architecture-summary.png" alt="Alt Text" width="800"/>
 </p>
 
 
